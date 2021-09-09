@@ -4,7 +4,7 @@ import os
 import sqlite3
 
 # Third-party libraries
-from flask import Flask, redirect, request, url_for
+from flask import Flask, redirect, request, url_for, render_template
 from flask_login import (
     LoginManager,
     current_user,
@@ -27,6 +27,8 @@ GOOGLE_DISCOVERY_URL = (
 )
 
 # Gets a list of OICD providers
+
+
 def get_google_provider_cfg():
     return requests.get(GOOGLE_DISCOVERY_URL).json()
 
@@ -42,7 +44,7 @@ login_manager.init_app(app)
 
 # Naive database setup
 try:
-    init_db_command()
+    init_db_command(standalone_mode=False)
 except sqlite3.OperationalError:
     # Assume it's already been created
     pass
@@ -51,25 +53,23 @@ except sqlite3.OperationalError:
 client = WebApplicationClient(GOOGLE_CLIENT_ID)
 
 # Flask-Login helper to retrieve a user from our db
+
+
 @login_manager.user_loader
 def load_user(user_id):
     return User.get(user_id)
 
 # Routes
+
+
 @app.route("/")
 def index():
     if current_user.is_authenticated:
-        return (
-            "<p>Hello, {}! You're logged in! Email: {}</p>"
-            "<div><p>Google Profile Picture:</p>"
-            '<img src="{}" alt="Google profile pic"></img></div>'
-            '<a class="button" href="/logout">Logout</a>'.format(
-                current_user.name, current_user.email, current_user.profile_pic
-            )
-        )
+        return render_template("index.html", user=current_user)
     else:
-        return '<a class="button" href="/login">Google Login</a>'
-    
+        return render_template("index.html", user=None)
+
+
 @app.route("/login")
 def login():
     # Find out what URL to hit for Google login
@@ -85,16 +85,17 @@ def login():
     )
     return redirect(request_uri)
 
+
 @app.route("/login/callback")
 def callback():
     # Get authorization code Google sent back to you
     code = request.args.get("code")
-    
+
     # Find out what URL to hit to get tokens that allow you to ask for
     # things on behalf of a user
     google_provider_cfg = get_google_provider_cfg()
     token_endpoint = google_provider_cfg["token_endpoint"]
-    
+
     # Prepare and send a request to get tokens
     token_url, headers, body = client.prepare_token_request(
         token_endpoint,
@@ -111,14 +112,14 @@ def callback():
 
     # Parse the tokens
     client.parse_request_body_response(json.dumps(token_response.json()))
-    
+
     # Now that you have tokens (yay) let's find and hit the URL
     # from Google that gives you the user's profile information,
     # including their Google profile image and email
     userinfo_endpoint = google_provider_cfg["userinfo_endpoint"]
     uri, headers, body = client.add_token(userinfo_endpoint)
     userinfo_response = requests.get(uri, headers=headers, data=body)
-    
+
     # The user authenticated with Google, authorized your
     # app, and now you've verified their email through Google!
     if userinfo_response.json().get("email_verified"):
@@ -128,7 +129,7 @@ def callback():
         users_name = userinfo_response.json()["given_name"]
     else:
         return "User email not available or not verified by Google.", 400
-    
+
     # Create a user in your db with the information provided
     # by Google
     user = User(
@@ -145,11 +146,13 @@ def callback():
     # Send user back to homepage
     return redirect(url_for("index"))
 
+
 @app.route("/logout")
 @login_required
 def logout():
     logout_user()
     return redirect(url_for("index"))
 
+
 if __name__ == "__main__":
-    app.run(ssl_context="adhoc", port=5000)
+    app.run(ssl_context="adhoc", port=443)
