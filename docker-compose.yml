@@ -1,0 +1,10 @@
+version: "3.8"
+services:
+  app:
+    build: .
+    command: python app.py
+    ports:
+      - "443:443"
+    env_file: env.txt
+    volumes:
+      - .:/python-flask
